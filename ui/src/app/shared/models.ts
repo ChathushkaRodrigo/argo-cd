@@ -477,6 +477,12 @@ export interface ResourceNetworkingInfo {
     labels: {[name: string]: string};
     ingress: LoadBalancerIngress[];
     externalURLs: string[];
+    targetWeights?: ResourceTargetWeight[];
+}
+
+export interface ResourceTargetWeight {
+    target: ResourceRef;
+    percentage: number;
 }
 
 export interface LoadBalancerIngress {

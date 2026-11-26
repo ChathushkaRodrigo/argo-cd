@@ -150,15 +150,27 @@ func populateIngressInfo(un *unstructured.Unstructured, res *ResourceInfo) {
 	ingress := getIngress(un)
 	targetsMap := make(map[v1alpha1.ResourceRef]bool)
 	gvk := un.GroupVersionKind()
-	if backend, ok, err := unstructured.NestedMap(un.Object, "spec", "backend"); ok && err == nil {
-		if serviceName, err := getServiceName(backend, gvk); err == nil {
-			targetsMap[v1alpha1.ResourceRef{
-				Group:     "",
-				Kind:      kube.ServiceKind,
-				Namespace: un.GetNamespace(),
-				Name:      serviceName,
-			}] = true
+	// albActions holds, for each AWS Load Balancer Controller forward action the Ingress uses, the weight of each
+	// Service the action sends traffic to
+	albActions := make(map[string]map[string]int64)
+	addBackend := func(backend map[string]any) {
+		serviceName, err := getServiceName(backend, gvk)
+		if err != nil {
+			return
 		}
+		if isALBActionBackend(backend, gvk) {
+			if weights, ok := albForwardServiceWeights(un, serviceName); ok {
+				albActions[serviceName] = weights
+				for name := range weights {
+					targetsMap[serviceRef(un.GetNamespace(), name)] = true
+				}
+				return
+			}
+		}
+		targetsMap[serviceRef(un.GetNamespace(), serviceName)] = true
+	}
+	if backend, ok, err := unstructured.NestedMap(un.Object, "spec", "backend"); ok && err == nil {
+		addBackend(backend)
 	}
 	urlsSet := make(map[string]bool)
 	if rules, ok, err := unstructured.NestedSlice(un.Object, "spec", "rules"); ok && err == nil {
@@ -187,14 +199,7 @@ func populateIngressInfo(un *unstructured.Unstructured, res *ResourceInfo) {
 				}
 
 				if backend, ok, err := unstructured.NestedMap(path, "backend"); ok && err == nil {
-					if serviceName, err := getServiceName(backend, gvk); err == nil {
-						targetsMap[v1alpha1.ResourceRef{
-							Group:     "",
-							Kind:      kube.ServiceKind,
-							Namespace: un.GetNamespace(),
-							Name:      serviceName,
-						}] = true
-					}
+					addBackend(backend)
 				}
 
 				if host == nil || host == "" {
@@ -256,11 +261,29 @@ func populateIngressInfo(un *unstructured.Unstructured, res *ResourceInfo) {
 		}
 	}
 
-	res.NetworkingInfo = &v1alpha1.ResourceNetworkingInfo{TargetRefs: targets, Ingress: ingress, ExternalURLs: urls}
+	var targetWeights []v1alpha1.ResourceTargetWeight
+	switch {
+	case len(albActions) == 1:
+		for _, weights := range albActions {
+			refWeights := make(map[v1alpha1.ResourceRef]int64, len(weights))
+			for name, weight := range weights {
+				refWeights[serviceRef(un.GetNamespace(), name)] = weight
+			}
+			targetWeights = targetPercentages(refWeights)
+		}
+	case len(albActions) == 0 && len(targets) == 1:
+		if percentage, ok := nginxCanaryPercentage(un); ok {
+			targetWeights = []v1alpha1.ResourceTargetWeight{{Target: targets[0], Percentage: percentage}}
+		}
+	}
+
+	res.NetworkingInfo = &v1alpha1.ResourceNetworkingInfo{TargetRefs: targets, Ingress: ingress, ExternalURLs: urls, TargetWeights: targetWeights}
 }
 
 func populateIstioVirtualServiceInfo(un *unstructured.Unstructured, res *ResourceInfo) {
 	targetsMap := make(map[v1alpha1.ResourceRef]bool)
+	// defaultRouteWeights holds the weight of each destination of the first http rule without match conditions
+	var defaultRouteWeights map[v1alpha1.ResourceRef]int64
 
 	if rules, ok, err := unstructured.NestedSlice(un.Object, "spec", "http"); ok && err == nil {
 		for i := range rules {
@@ -271,6 +294,10 @@ func populateIstioVirtualServiceInfo(un *unstructured.Unstructured, res *Resourc
 			routes, ok, err := unstructured.NestedSlice(rule, "route")
 			if !ok || err != nil {
 				continue
+			}
+			isDefaultRule := defaultRouteWeights == nil && isDefaultIstioHTTPRoute(rule)
+			if isDefaultRule {
+				defaultRouteWeights = make(map[v1alpha1.ResourceRef]int64)
 			}
 			for i := range routes {
 				route, ok := routes[i].(map[string]any)
@@ -289,11 +316,15 @@ func populateIstioVirtualServiceInfo(un *unstructured.Unstructured, res *Resourc
 						namespace = un.GetNamespace()
 					}
 
-					targetsMap[v1alpha1.ResourceRef{
+					target := v1alpha1.ResourceRef{
 						Kind:      kube.ServiceKind,
 						Name:      serviceName,
 						Namespace: namespace,
-					}] = true
+					}
+					targetsMap[target] = true
+					if isDefaultRule {
+						defaultRouteWeights[target] += istioRouteWeight(route, len(routes))
+					}
 				}
 			}
 		}
@@ -308,7 +339,7 @@ func populateIstioVirtualServiceInfo(un *unstructured.Unstructured, res *Resourc
 		urls = res.NetworkingInfo.ExternalURLs
 	}
 
-	res.NetworkingInfo = &v1alpha1.ResourceNetworkingInfo{TargetRefs: targets, ExternalURLs: urls}
+	res.NetworkingInfo = &v1alpha1.ResourceNetworkingInfo{TargetRefs: targets, ExternalURLs: urls, TargetWeights: targetPercentages(defaultRouteWeights)}
 }
 
 func populateIstioServiceEntryInfo(un *unstructured.Unstructured, res *ResourceInfo) {
@@ -521,6 +552,9 @@ func populateGatewayAPIRouteInfo(un *unstructured.Unstructured, res *ResourceInf
 		}
 	}
 
+	// defaultRuleWeights holds the weight of each backend of the first rule that applies to all requests
+	var defaultRuleWeights map[v1alpha1.ResourceRef]int64
+
 	// Extract backend refs from all rules
 	rules, ok, err := unstructured.NestedSlice(un.Object, "spec", "rules")
 	if ok && err == nil {
@@ -533,6 +567,10 @@ func populateGatewayAPIRouteInfo(un *unstructured.Unstructured, res *ResourceInf
 			backendRefs, ok, err := unstructured.NestedSlice(ruleMap, "backendRefs")
 			if !ok || err != nil {
 				continue
+			}
+			isDefaultRule := defaultRuleWeights == nil && isDefaultGatewayAPIRouteRule(ruleMap)
+			if isDefaultRule {
+				defaultRuleWeights = make(map[v1alpha1.ResourceRef]int64)
 			}
 
 			for _, backendRef := range backendRefs {
@@ -561,12 +599,16 @@ func populateGatewayAPIRouteInfo(un *unstructured.Unstructured, res *ResourceInf
 					kind = kube.ServiceKind
 				}
 
-				targetsMap[v1alpha1.ResourceRef{
+				target := v1alpha1.ResourceRef{
 					Group:     group,
 					Kind:      kind,
 					Namespace: namespace,
 					Name:      name,
-				}] = true
+				}
+				targetsMap[target] = true
+				if isDefaultRule {
+					defaultRuleWeights[target] += gatewayAPIBackendWeight(backend)
+				}
 			}
 		}
 	}
@@ -582,8 +624,9 @@ func populateGatewayAPIRouteInfo(un *unstructured.Unstructured, res *ResourceInf
 	}
 
 	res.NetworkingInfo = &v1alpha1.ResourceNetworkingInfo{
-		TargetRefs:   targets,
-		ExternalURLs: urls,
+		TargetRefs:    targets,
+		ExternalURLs:  urls,
+		TargetWeights: targetPercentages(defaultRuleWeights),
 	}
 }
 

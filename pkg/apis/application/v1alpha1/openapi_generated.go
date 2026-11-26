@@ -146,6 +146,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceRef":                             schema_pkg_apis_application_v1alpha1_ResourceRef(ref),
 		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceResult":                          schema_pkg_apis_application_v1alpha1_ResourceResult(ref),
 		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceStatus":                          schema_pkg_apis_application_v1alpha1_ResourceStatus(ref),
+		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceTargetWeight":                    schema_pkg_apis_application_v1alpha1_ResourceTargetWeight(ref),
 		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.RetryStrategy":                           schema_pkg_apis_application_v1alpha1_RetryStrategy(ref),
 		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.RevisionHistory":                         schema_pkg_apis_application_v1alpha1_RevisionHistory(ref),
 		"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.RevisionMetadata":                        schema_pkg_apis_application_v1alpha1_RevisionMetadata(ref),
@@ -6614,11 +6615,25 @@ func schema_pkg_apis_application_v1alpha1_ResourceNetworkingInfo(ref common.Refe
 							},
 						},
 					},
+					"targetWeights": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TargetWeights holds the share of this resource's traffic that goes to each target, when the resource splits traffic between targets by weight (for example a canary and a stable Service).",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: map[string]any{},
+										Ref:     ref("github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceTargetWeight"),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceRef", "k8s.io/api/core/v1.LoadBalancerIngress"},
+			"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceRef", "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceTargetWeight", "k8s.io/api/core/v1.LoadBalancerIngress"},
 	}
 }
 
@@ -7005,6 +7020,37 @@ func schema_pkg_apis_application_v1alpha1_ResourceStatus(ref common.ReferenceCal
 		},
 		Dependencies: []string{
 			"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.HealthStatus"},
+	}
+}
+
+func schema_pkg_apis_application_v1alpha1_ResourceTargetWeight(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ResourceTargetWeight is the share of a networking resource's traffic that goes to one of its targets.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"target": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Target is the resource that receives the traffic, usually a Service.",
+							Default:     map[string]any{},
+							Ref:         ref("github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceRef"),
+						},
+					},
+					"percentage": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Percentage is the share of the traffic, from 0 to 100, that goes to the target.",
+							Default:     0,
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+				},
+				Required: []string{"target", "percentage"},
+			},
+		},
+		Dependencies: []string{
+			"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1.ResourceRef"},
 	}
 }
 

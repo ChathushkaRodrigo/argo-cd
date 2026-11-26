@@ -1,4 +1,4 @@
-import {compareNodes, describeNode, getEffectiveParentKey, ResourceTreeNode} from './application-resource-tree';
+import {compareNodes, describeNode, getEffectiveParentKey, ResourceTreeNode, trafficPercentage} from './application-resource-tree';
 
 function node(kind: string, name: string, parent?: ResourceTreeNode): ResourceTreeNode {
     return {
@@ -158,4 +158,27 @@ test('compareNodes', () => {
     expect(compareNodes(nodes[4], nodes[5])).toBe(-1);
     expect(compareNodes(nodes[0], nodes[4])).toBe(-1);
     expect(compareNodes(nodes[4], nodes[0])).toBe(1);
+});
+
+test('trafficPercentage', () => {
+    const stable = {group: '', kind: 'Service', namespace: 'demo', name: 'stable'};
+    const canary = {group: '', kind: 'Service', namespace: 'demo', name: 'canary'};
+    const other = {group: '', kind: 'Service', namespace: 'demo', name: 'other'};
+    const ref = (n: typeof stable) => ({...n, uid: '', version: ''});
+    const route = {
+        networkingInfo: {
+            targetRefs: [ref(stable), ref(canary)],
+            targetWeights: [
+                {target: ref(canary), percentage: 0},
+                {target: ref(stable), percentage: 100}
+            ]
+        } as any
+    };
+
+    expect(trafficPercentage(route, stable)).toBe(100);
+    expect(trafficPercentage(route, canary)).toBe(0);
+    expect(trafficPercentage(route, other)).toBeUndefined();
+    // a resource that does not split its traffic by weight has no percentages
+    expect(trafficPercentage({networkingInfo: {targetRefs: [ref(stable)]} as any}, stable)).toBeUndefined();
+    expect(trafficPercentage({}, stable)).toBeUndefined();
 });

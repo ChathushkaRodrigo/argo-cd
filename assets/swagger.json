@@ -10304,6 +10304,13 @@
           "items": {
             "$ref": "#/definitions/v1alpha1ResourceRef"
           }
+        },
+        "targetWeights": {
+          "description": "TargetWeights holds the share of this resource's traffic that goes to each target, when the resource\nsplits traffic between targets by weight (for example a canary and a stable Service).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1alpha1ResourceTargetWeight"
+          }
         }
       }
     },
@@ -10457,6 +10464,20 @@
         "version": {
           "type": "string",
           "title": "Version specifies the API version of the resource"
+        }
+      }
+    },
+    "v1alpha1ResourceTargetWeight": {
+      "description": "ResourceTargetWeight is the share of a networking resource's traffic that goes to one of its targets.",
+      "type": "object",
+      "properties": {
+        "percentage": {
+          "description": "Percentage is the share of the traffic, from 0 to 100, that goes to the target.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "target": {
+          "$ref": "#/definitions/v1alpha1ResourceRef"
         }
       }
     },

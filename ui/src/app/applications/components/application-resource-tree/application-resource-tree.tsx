@@ -1047,6 +1047,14 @@ function renderResourceNode(
     );
 }
 
+// trafficPercentage returns the share of the source's traffic, from 0 to 100, that goes to the target, or undefined
+// when the source does not split its traffic by weight.
+export function trafficPercentage(source: {[key: string]: any}, target: {[key: string]: any}): number | undefined {
+    const networkingInfo = source?.networkingInfo as models.ResourceNetworkingInfo | undefined;
+    const weight = (networkingInfo?.targetWeights || []).find(w => nodeKey(w.target) === nodeKey(target as NodeId));
+    return weight ? weight.percentage : undefined;
+}
+
 function findNetworkTargets(nodes: ResourceTreeNode[], networkingInfo: models.ResourceNetworkingInfo): ResourceTreeNode[] {
     let result = new Array<ResourceTreeNode>();
     const refs = new Set((networkingInfo.targetRefs || []).map(nodeKey));
@@ -1410,7 +1418,15 @@ export const ApplicationResourceTree = (props: ApplicationResourceTreeProps) => 
     }
     dagre.layout(graph);
 
-    const edges: {from: string; to: string; lines: Line[]; backgroundImage?: string; color?: string; colors?: string | {[key: string]: any}}[] = [];
+    const edges: {
+        from: string;
+        to: string;
+        lines: Line[];
+        backgroundImage?: string;
+        color?: string;
+        colors?: string | {[key: string]: any};
+        percentage?: number;
+    }[] = [];
     const nodeOffset = new Map<string, number>();
     const reverseEdge = new Map<string, number>();
     graph.edges().forEach(edgeInfo => {
@@ -1472,7 +1488,10 @@ export const ApplicationResourceTree = (props: ApplicationResourceTreeProps) => 
                 lines.push({x1: firstBend, y1: yEnd, x2: endNode.x - endNodeLeft, y2: yEnd});
             }
         }
-        edges.push({from: edgeInfo.v, to: edgeInfo.w, lines, backgroundImage, colors: [{colors}]});
+        const startNode = graph.node(edgeInfo.v);
+        const endNode = graph.node(edgeInfo.w);
+        const percentage = props.useNetworkingHierarchy && startNode && endNode && endNode.kind ? trafficPercentage(startNode, endNode) : undefined;
+        edges.push({from: edgeInfo.v, to: edgeInfo.w, lines, backgroundImage, colors: [{colors}], percentage});
     });
     const graphNodes = graph.nodes();
     const size = getGraphSize(graphNodes.map(id => graph.node(id)));
@@ -1564,7 +1583,9 @@ export const ApplicationResourceTree = (props: ApplicationResourceTreeProps) => 
                     }
                 })}
                 {edges.map(edge => (
-                    <div key={`${edge.from}-${edge.to}`} className='application-resource-tree__edge'>
+                    <div
+                        key={`${edge.from}-${edge.to}`}
+                        className={classNames('application-resource-tree__edge', {'application-resource-tree__edge--no-traffic': edge.percentage === 0})}>
                         {edge.lines.map((line, i) => {
                             const distance = Math.sqrt(Math.pow(line.x1 - line.x2, 2) + Math.pow(line.y1 - line.y2, 2));
                             const xMid = (line.x1 + line.x2) / 2;
@@ -1595,6 +1616,18 @@ export const ApplicationResourceTree = (props: ApplicationResourceTreeProps) => 
                                 </div>
                             );
                         })}
+                        {edge.percentage !== undefined && edge.lines.length > 0 && (
+                            <div
+                                className='application-resource-tree__traffic-weight'
+                                title={`${edge.percentage}% of the traffic goes to this resource`}
+                                style={{
+                                    left: edge.lines[edge.lines.length - 1].x2,
+                                    top: edge.lines[edge.lines.length - 1].y2,
+                                    transform: 'translate(96px, 17px)'
+                                }}>
+                                {edge.percentage}%
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

@@ -2294,6 +2294,10 @@ message ResourceNetworkingInfo {
   // ExternalURLs holds a list of URLs that should be accessible externally.
   // This field is typically populated for Ingress resources based on their hostname rules.
   repeated string externalURLs = 5;
+
+  // TargetWeights holds the share of this resource's traffic that goes to each target, when the resource
+  // splits traffic between targets by weight (for example a canary and a stable Service).
+  repeated ResourceTargetWeight targetWeights = 6;
 }
 
 // ResourceNode contains information about a live Kubernetes resource and its relationships with other resources.
@@ -2434,6 +2438,15 @@ message ResourceStatus {
 
   // RequiresDeletionConfirmation is true if the resource requires explicit user confirmation before deletion.
   optional bool requiresDeletionConfirmation = 11;
+}
+
+// ResourceTargetWeight is the share of a networking resource's traffic that goes to one of its targets.
+message ResourceTargetWeight {
+  // Target is the resource that receives the traffic, usually a Service.
+  optional ResourceRef target = 1;
+
+  // Percentage is the share of the traffic, from 0 to 100, that goes to the target.
+  optional int64 percentage = 2;
 }
 
 // RetryStrategy contains information about the strategy to apply when a sync failed

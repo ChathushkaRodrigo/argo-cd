@@ -56,6 +56,31 @@
                 }
             }
         }
+
+        // an edge that currently gets none of the traffic, such as a canary at 0%
+        .application-resource-tree__edge--no-traffic {
+            opacity: 0.35;
+            .application-resource-tree__line {
+                animation: none;
+            }
+        }
+
+        .application-resource-tree__traffic-weight {
+            position: absolute;
+            min-width: 36px;
+            padding: 0 4px;
+            border-radius: 8px;
+            border: 1px solid $argo-color-teal-5;
+            @include themify($themes) {
+                background-color: themed('background-2');
+                color: themed('text-2');
+            }
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 16px;
+            text-align: center;
+            white-space: nowrap;
+        }
     }
 
     // Keep in sync with `NODE_HEIGHT` in `application-resource-tree.tsx`.

@@ -2118,6 +2118,17 @@ type ResourceNetworkingInfo struct {
 	// ExternalURLs holds a list of URLs that should be accessible externally.
 	// This field is typically populated for Ingress resources based on their hostname rules.
 	ExternalURLs []string `json:"externalURLs,omitempty" protobuf:"bytes,5,opt,name=externalURLs"`
+	// TargetWeights holds the share of this resource's traffic that goes to each target, when the resource
+	// splits traffic between targets by weight (for example a canary and a stable Service).
+	TargetWeights []ResourceTargetWeight `json:"targetWeights,omitempty" protobuf:"bytes,6,rep,name=targetWeights"`
+}
+
+// ResourceTargetWeight is the share of a networking resource's traffic that goes to one of its targets.
+type ResourceTargetWeight struct {
+	// Target is the resource that receives the traffic, usually a Service.
+	Target ResourceRef `json:"target" protobuf:"bytes,1,opt,name=target"`
+	// Percentage is the share of the traffic, from 0 to 100, that goes to the target.
+	Percentage int64 `json:"percentage" protobuf:"varint,2,opt,name=percentage"`
 }
 
 // HostResourceInfo represents resource usage details for a specific resource type on a host.
